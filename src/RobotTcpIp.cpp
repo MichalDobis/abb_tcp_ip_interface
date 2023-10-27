@@ -1,9 +1,12 @@
 #include <abb_tcp_ip_interface/RobotTcpIp.h>
-#include <netinet/in.h> //structure for storing address information
-#include <sys/socket.h> //for socket APIs
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <abb_tcp_ip_interface/Exceptions.h>
 #include <vector>
 #include <unistd.h>
+#include <cstring>
+#include <arpa/inet.h>
+#include <cerrno>
 #include <cstring>
 
 tcp::Client::Client(const std::string& serverIp, int port) {
@@ -13,14 +16,14 @@ tcp::Client::Client(const std::string& serverIp, int port) {
 
     servAddr.sin_family = AF_INET;
     servAddr.sin_port
-            = htons(port); // use some unused port number
-    servAddr.sin_addr.s_addr = INADDR_ANY;
+            = htons(port);
+    servAddr.sin_addr.s_addr = inet_addr(serverIp.c_str());
 
     int connectStatus = connect(_fd, (struct sockaddr*)&servAddr,
                       sizeof(servAddr));
 
     if (connectStatus == -1) {
-        throw SocketException("Unable to connect to client");
+        throw SocketException("Unable to connect to client. Errno: " + std::string(strerror(errno)));
     }
 }
 
@@ -40,6 +43,7 @@ std::vector<uint8_t> tcp::Client::recv(unsigned int size) const {
         throw SocketException("Unable to read " + std::to_string(size) + " bytes. Number of received bytes: " +
                                  std::to_string(receivedBytes));
     }
+    return data;
 }
 
 Robot::Robot(tcp::ClientPtr client) : _client(client) { }
@@ -55,7 +59,7 @@ void Robot::moveL(const Transform& transform) {
 template<typename T>
 std::vector<uint8_t> packData(const T& data){
     std::vector<uint8_t> bytes(sizeof(data));
-    std::memcpy(&bytes[0], &data, bytes.size());
+    std::memcpy(&bytes[0], &data, sizeof(data));
     return bytes;
 }
 
@@ -67,25 +71,27 @@ std::vector<uint8_t> packData(const Robot::CommandType& cmd) {
 template <typename T>
 T unpackData(const std::vector<uint8_t>& data) {
     T result;
-    std::memcpy(&result, &data[0], sizeof(result));
+    std::memcpy(&result, &data[0], sizeof(T));
     return result;
 }
 
 void Robot::move(CommandType cmd, const Transform& transform) {
-    std::vector<uint8_t> bytes(INT_SIZE + TRANSFORM_SIZE);
-
+    std::vector<uint8_t> bytes;
+    bytes.reserve(INT_SIZE + TRANSFORM_SIZE);
     auto rawCmd = packData(cmd);
     auto rawTransform  = packData(transform);
+
+
 
     bytes.insert(bytes.begin(), rawCmd.begin(), rawCmd.end());
     bytes.insert(bytes.end(), rawTransform.begin(), rawTransform.end());
     _client->send(bytes);
 
     // Waiting for result
-    auto success = unpackData<int>(_client->recv(INT_SIZE));
+    auto error_code = unpackData<int32_t>(_client->recv(INT_SIZE));
 
-    if (!success) {
-        throw RobotException("Execution failed");
+    if (error_code) {
+        throw RobotException("Execution failed. Error code: " + std::to_string(error_code));
     }
 }
 
@@ -95,9 +101,10 @@ Transform Robot::getCurrentPosition() {
 
     // Waiting for result
     auto result = _client->recv(INT_SIZE + TRANSFORM_SIZE);
-    auto success = unpackData<int>(result);
-    if (!success) {
-        throw RobotException("Communication failed, Received incorrect bytes");
+    auto error_code = unpackData<int32_t>(result);
+
+    if (error_code) {
+        throw RobotException("Communication failed, Received error code: " + std::to_string(error_code));
     }
     return unpackData<Transform>(std::vector<uint8_t>(result.begin() + INT_SIZE, result.end()));
 }
