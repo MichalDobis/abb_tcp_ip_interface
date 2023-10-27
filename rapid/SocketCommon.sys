@@ -1,0 +1,96 @@
+MODULE SocketCommon(SYSMODULE, NOSTEPIN, VIEWONLY)
+
+    ! Command types
+    CONST num MOVE_J:=1;
+    CONST num MOVE_L:=2;
+    CONST num CURRENT_POSE:=3;
+    
+    LOCAL VAR socketdev server_socket;
+    LOCAL VAR socketdev client_socket;
+
+    ! port = 11004
+    PROC init_server(num server_port)
+    
+        IF (SocketGetStatus(server_socket) <> SOCKET_CLOSED) SocketClose server_socket;
+        WaitUntil (SocketGetStatus(server_socket) = SOCKET_CLOSED);
+    
+        IF (SocketGetStatus(server_socket) = SOCKET_CLOSED) SocketCreate server_socket;
+        IF (SocketGetStatus(server_socket) = SOCKET_CREATED) SocketBind server_socket, GetSysInfo(\LanIp), server_port;
+        IF (SocketGetStatus(server_socket) = SOCKET_BOUND) SocketListen server_socket;
+    ENDPROC
+
+    PROC wait_for_client(\num wait_time)
+        VAR string client_ip;
+        VAR num time_val := WAIT_MAX;  ! default to wait-forever
+
+        IF Present(wait_time) time_val := wait_time;
+        TPWrite "Waiting for connection...";
+        
+        IF (SocketGetStatus(client_socket) <> SOCKET_CLOSED) SocketClose client_socket;
+        WaitUntil (SocketGetStatus(client_socket) = SOCKET_CLOSED);
+
+        SocketAccept server_socket, client_socket, \ClientAddress:=client_ip, \Time:=time_val;
+        TPWrite "Client at " + client_ip + " connected.";
+    ENDPROC
+
+    FUNC num wait_for_command()
+         VAR rawbytes buffer;
+         VAR num command;
+
+         ! Receive command type
+         SocketReceive client_socket,\RawData:=buffer,\ReadNoOfBytes:=4,\Time:=WAIT_MAX;
+         unpackRawBytes buffer,1,command,\IntX:=UDINT;
+         RETURN command;
+    ENDFUNC
+ 
+    FUNC robtarget recv_target()
+        VAR rawbytes buffer;
+        VAR num i;
+        VAR num target_num{7};
+        VAR num size:=7;
+
+        ! Receive and unpack data
+        SocketReceive client_socket,\RawData:=buffer,\ReadNoOfBytes:=size*4,\Time:=0.5;
+        FOR i FROM 1 TO size STEP 1 DO
+            UnpackRawBytes buffer,i*4-3,target_num{i},\Float4;
+        ENDFOR
+        RETURN [[target_num{1}, target_num{2}, target_num{3}],[target_num{4}, target_num{5}, target_num{6}, target_num{7}],[0,0,0,0],[9E+09,9E+09,9E+09,9E+09,9E+09,9E+09]];
+    ENDFUNC
+        
+    PROC send_result(num exit_code)
+        VAR rawbytes buffer;
+	PackRawBytes exit_code,buffer,1,\IntX:=DINT;
+        SocketSend client_socket \RawData:=buffer;
+    ENDPROC
+
+    PROC send_position(robtarget tool_pose)
+        VAR rawbytes buffer;
+        VAR rawbytes exit_code:=0;
+
+       PackRawBytes exit_code,           buffer,1,\IntX:=DINT;
+       PackRawBytes tool_pose.trans.x,   buffer, 5, \Float4;
+       PackRawBytes tool_pose.trans.y,   buffer, 9, \Float4;
+       PackRawBytes tool_pose.trans.z,   buffer, 13, \Float4;
+       PackRawBytes tool_pose.rot.q2,    buffer, 17, \Float4; !x  quaternion
+       PackRawBytes tool_pose.rot.q3,    buffer, 21, \Float4; !y
+       PackRawBytes tool_pose.rot.q4,    buffer, 25, \Float4; !z
+       PackRawBytes tool_pose.rot.q1,    buffer, 29, \Float4; !W
+
+        SocketSend client_socket \RawData:=buffer;
+    ENDPROC
+
+    FUNC string command_to_str(num cmd)
+
+        TEST cmd
+        CASE MOVE_J:
+            RETURN "MOVE J";
+        CASE MOVE_L:
+            RETURN "MOVE L";
+        CASE CURRENT_POSE:
+            RETURN "CURRENT POSE";
+        DEFAULT:
+            RETURN "undefined command: " + NumToStr(cmd,0);
+        ENDTEST
+    ENDFUNC
+
+ENDMODULE
