@@ -16,6 +16,7 @@ MODULE SocketCommon(SYSMODULE, NOSTEPIN, VIEWONLY)
     
         IF (SocketGetStatus(server_socket) = SOCKET_CLOSED) SocketCreate server_socket;
         IF (SocketGetStatus(server_socket) = SOCKET_CREATED) SocketBind server_socket, GetSysInfo(\LanIp), server_port;
+        TPWrite "Server run on " + GetSysInfo(\LanIp);
         IF (SocketGetStatus(server_socket) = SOCKET_BOUND) SocketListen server_socket;
     ENDPROC
 
@@ -54,7 +55,15 @@ MODULE SocketCommon(SYSMODULE, NOSTEPIN, VIEWONLY)
         FOR i FROM 1 TO size STEP 1 DO
             UnpackRawBytes buffer,i*4-3,target_num{i},\Float4;
         ENDFOR
-        RETURN [[target_num{1}, target_num{2}, target_num{3}],[target_num{4}, target_num{5}, target_num{6}, target_num{7}],[0,0,0,0],[9E+09,9E+09,9E+09,9E+09,9E+09,9E+09]];
+        TPWrite "target recived: " + NumToStr(target_num{1},3);
+        TPWrite "target recived: " + NumToStr(target_num{2},3);
+        TPWrite "target recived: " + NumToStr(target_num{3},3);
+        
+        TPWrite "target recived: " + NumToStr(target_num{4},3);
+        TPWrite "target recived: " + NumToStr(target_num{5},3);
+        TPWrite "target recived: " + NumToStr(target_num{6},3);
+        TPWrite "target recived: " + NumToStr(target_num{7},3);
+        RETURN [[target_num{1}, target_num{2}, target_num{3}],[target_num{7}, target_num{4}, target_num{5}, target_num{6}],[0,0,0,0],[9E+09,9E+09,9E+09,9E+09,9E+09,9E+09]];
     ENDFUNC
         
     PROC send_result(num exit_code)
@@ -65,7 +74,7 @@ MODULE SocketCommon(SYSMODULE, NOSTEPIN, VIEWONLY)
 
     PROC send_position(robtarget tool_pose)
         VAR rawbytes buffer;
-        VAR rawbytes exit_code:=0;
+        VAR num exit_code:=0;
 
        PackRawBytes exit_code,           buffer,1,\IntX:=DINT;
        PackRawBytes tool_pose.trans.x,   buffer, 5, \Float4;
