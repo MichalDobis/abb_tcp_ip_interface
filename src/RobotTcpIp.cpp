@@ -41,6 +41,7 @@ _fd = socket(AF_INET, SOCK_STREAM, 0);
 
 tcp::Client::~Client() {
         #ifdef _WIN32
+	closesocket(_fd);
 #else
     close(_fd);
 #endif
