@@ -1,16 +1,28 @@
 #include <abb_tcp_ip_interface/RobotTcpIp.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
 #include <abb_tcp_ip_interface/Exceptions.h>
 #include <vector>
+#include <cstring>
+#ifdef _WIN32
+#include<windows.h>
+
+#else
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <unistd.h>
-#include <cstring>
 #include <arpa/inet.h>
+#endif
 #include <cerrno>
-#include <cstring>
 
 tcp::Client::Client(const std::string& serverIp, int port) {
-    _fd = socket(AF_INET, SOCK_STREAM, 0);
+    
+#ifdef _WIN32
+    WSADATA wsaData = {0};
+    int iResult = 0;
+    // Initialize Winsock
+    iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+#else
+#endif
+_fd = socket(AF_INET, SOCK_STREAM, 0);
 
     struct sockaddr_in servAddr;
 
@@ -28,17 +40,20 @@ tcp::Client::Client(const std::string& serverIp, int port) {
 }
 
 tcp::Client::~Client() {
+        #ifdef _WIN32
+#else
     close(_fd);
+#endif
 }
 
 void tcp::Client::send(const std::vector<uint8_t>& data) const {
-    ::send(_fd, &data[0], data.size(), 0);
+    ::send(_fd, (char*)&data[0], data.size(), 0);
 }
 
 std::vector<uint8_t> tcp::Client::recv(unsigned int size) const {
     std::vector<uint8_t> data(size);
 
-    int receivedBytes = ::recv(_fd, &data[0], size, 0);
+    int receivedBytes = ::recv(_fd, (char*)&data[0], size, 0);
     if (receivedBytes != size) {
         throw SocketException("Unable to read " + std::to_string(size) + " bytes. Number of received bytes: " +
                                  std::to_string(receivedBytes));
